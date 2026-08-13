@@ -19,6 +19,9 @@
       --accent2:  #b08050;
       --font-serif: 'STIX Two Text', 'Times New Roman', serif;
       --font-sans:  'DM Sans', system-ui, sans-serif;
+      /* Thumbnail size — height follows from the aspect ratio below */
+      --thumb-w: 190px;
+      --thumb-ratio: 3 / 2;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -118,16 +121,49 @@
     .paper-inner {
       display: flex;
       align-items: center;
-      gap: 18px;
+      gap: 22px;
     }
 
+    /* ── Thumbnail: still poster frame, plays on hover ── */
     .paper-thumb {
+      position: relative;
       flex-shrink: 0;
-      width: 120px;
-      height: 85px;
-      object-fit: cover;
+      width: var(--thumb-w);
+      aspect-ratio: var(--thumb-ratio);
       border-radius: 3px;
       border: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+      transition: border-color 0.25s;
+    }
+
+    .paper-thumb video {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: var(--surface);
+    }
+
+    /* Paper-toned veil that lifts on hover — signals the thumbnail is alive */
+    .paper-thumb::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(250, 248, 244, 0.28);
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .paper:hover .paper-thumb::after,
+    .paper:focus-within .paper-thumb::after,
+    .paper-thumb.is-playing::after { opacity: 0; }
+
+    .paper:hover .paper-thumb,
+    .paper:focus-within .paper-thumb { border-color: var(--accent2); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .paper-thumb, .paper-thumb::after { transition: none; }
     }
 
     /* Right side: all info flows inline with · separators */
@@ -195,9 +231,14 @@
     /* ── Footer ── */
     footer { padding: 36px 0; font-size: 12px; color: var(--muted); }
 
+    /* Step down before the text column gets squeezed */
+    @media (max-width: 680px) {
+      :root { --thumb-w: 150px; }
+    }
+
     @media (max-width: 520px) {
-      .paper-inner { flex-direction: column; align-items: flex-start; }
-      .paper-thumb { width: 100%; height: 160px; }
+      .paper-inner { flex-direction: column; align-items: flex-start; gap: 16px; }
+      .paper-thumb { width: 100%; }
     }
   </style>
 </head>
@@ -239,7 +280,12 @@
 
 <!-- ══════════════════════════════════════════════════════════
      ADD A PAPER: copy one <article class="paper"> block.
-     Set src to your image or gif: thumbnails/yourfile.gif
+     Thumbnail: an .mp4 that loops on hover, with a .jpg first
+     frame as the still state.
+       thumbnails/yourpaper.mp4   (silent, 640x427, 3-6s loop)
+       thumbnails/yourpaper.jpg   (poster / still frame)
+     Missing files degrade gracefully: no video -> poster stays,
+     neither -> the thumbnail is dropped and the row reflows.
      ══════════════════════════════════════════════════════════ -->
 <section id="publications">
   <div class="container">
@@ -247,7 +293,10 @@
 
     <article class="paper">
       <div class="paper-inner">
-        <img class="paper-thumb" src="thumbnails/paper1.gif" alt="" onerror="this.style.display='none'" />
+        <div class="paper-thumb">
+          <video src="thumbnails/paper1.mp4" poster="thumbnails/paper1.jpg"
+                 muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        </div>
         <div class="paper-body">
           <div class="paper-line">
             <span class="paper-title">Intrinsic decomposition and editing of 3D Gaussian splats</span>
@@ -270,7 +319,10 @@
 
     <article class="paper">
       <div class="paper-inner">
-        <img class="paper-thumb" src="thumbnails/paper1.gif" alt="" onerror="this.style.display='none'" />
+        <div class="paper-thumb">
+          <video src="thumbnails/paper2.mp4" poster="thumbnails/paper2.jpg"
+                 muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        </div>
         <div class="paper-body">
           <div class="paper-line">
             <span class="paper-title">On-the-fly reconstruction for large-scale novel view synthesis from unposed images</span>
@@ -293,7 +345,10 @@
 
     <article class="paper">
       <div class="paper-inner">
-        <img class="paper-thumb" src="thumbnails/paper1.gif" alt="" onerror="this.style.display='none'" />
+        <div class="paper-thumb">
+          <video src="thumbnails/paper3.mp4" poster="thumbnails/paper3.jpg"
+                 muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        </div>
         <div class="paper-body">
 
           <div class="paper-line">
@@ -325,6 +380,73 @@
     © 2026 Alexandre Lanvin · Hosted on GitHub Pages
   </div>
 </footer>
+
+<script>
+/* Thumbnails play while a publication row is hovered or keyboard-focused.
+   On touch devices there is no hover, so a thumbnail plays while it sits
+   in the middle of the viewport instead. */
+(function () {
+  var canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  document.querySelectorAll('.paper').forEach(function (paper) {
+    var thumb = paper.querySelector('.paper-thumb');
+    var video = thumb && thumb.querySelector('video');
+    if (!video) return;
+
+    /* Drop the thumbnail only if neither the video nor the poster exists,
+       so a half-finished row never shows an empty box. */
+    var videoFailed = false, posterFailed = !video.getAttribute('poster');
+    function dropIfEmpty() { if (videoFailed && posterFailed) thumb.remove(); }
+
+    video.addEventListener('error', function () { videoFailed = true; dropIfEmpty(); });
+    if (video.getAttribute('poster')) {
+      var probe = new Image();
+      probe.onerror = function () { posterFailed = true; dropIfEmpty(); };
+      probe.src = video.getAttribute('poster');
+    }
+
+    function play() {
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+      thumb.classList.add('is-playing');
+    }
+    function stop() {
+      video.pause();
+      video.currentTime = 0;
+      thumb.classList.remove('is-playing');
+    }
+
+    /* Fetch the clip once the row is near the viewport so the first
+       hover starts instantly instead of buffering. */
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries, obs) {
+        if (!entries[0].isIntersecting) return;
+        video.preload = 'auto';
+        video.load();
+        obs.disconnect();
+      }, { rootMargin: '300px' }).observe(thumb);
+    } else {
+      video.preload = 'metadata';
+    }
+
+    if (canHover) {
+      paper.addEventListener('mouseenter', play);
+      paper.addEventListener('mouseleave', stop);
+      paper.addEventListener('focusin', play);
+      paper.addEventListener('focusout', stop);
+    } else if (!reduceMotion && 'IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries[0].isIntersecting ? play() : stop();
+      }, { threshold: 0.6 }).observe(thumb);
+    } else {
+      thumb.addEventListener('click', function () {
+        video.paused ? play() : stop();
+      });
+    }
+  });
+})();
+</script>
 
 </body>
 </html>
